@@ -82,23 +82,6 @@ typedef enum Pin_Velocidad{
  */
 void Pin_modoSalida(HPin hpin, Pin_Velocidad velocidad, bool drenadorAbierto);
 
-typedef enum Pin_Funcion{
-    PIN_FN_GPIO,
-    PIN_FN_ALTERNA,
-    PIN_FN_ALTERNA_REMAPEADA
-}Pin_Funcion;
-
-/**
- * @brief Configura la función de un pin entre GPIO y AFIO. Activa reloj del
- * puerto y el controlador AFIO de ser necesario. Configura el remapeado de función.
- * 
- * @param hpin Handle del pin
- * @param funcion 
- * @return true Configuración exitosa
- * @return false Configuración no válida o no soportada
- */
-bool Pin_seleccionFuncion(HPin hpin, Pin_Funcion funcion);
-
 typedef enum Pin_FlancoInterrupcion{
     PIN_INT_ASCENDENTE  = 0b01, ///< Interrupción en flanco ascendente
     PIN_INT_DESCENDENTE = 0b10, ///< Interrupción en flanco descendente
@@ -132,7 +115,8 @@ void Pin_configuraInterrupcionExterna(HPin hpin, Pin_ExtInt_Handler *handler, Pi
  * @return false: Periférico está apagado
  * 
  */
-bool Pin_desconfiguraInterrupcionExterna(HPin hpin);
+bool Pin_desactivaInterrupcionExterna(HPin hpin);
+
 /**
  * @brief Lee el buffer de entrada de un pin (previamente configurado).
  * 
@@ -141,6 +125,7 @@ bool Pin_desconfiguraInterrupcionExterna(HPin hpin);
  * @return false Nivel BAJO
  */
 bool Pin_lee(HPin hpin);
+
 /**
  * @brief Escribe en el buffer de salida de un pin. El pin debe haber sido configurado.
  * 
@@ -158,8 +143,8 @@ void Pin_escribe(HPin hpin, bool valor);
  * está desconectado del pin.
  * 
  * @param hpin Handle del pin
- * @return true Nivel ***alto*** o entrada pull-up
- * @return false Nivel ***bajo*** o entrada pull-down
+ * @return true: Nivel ***alto*** o entrada pull-up
+ * @return false: Nivel ***bajo*** o entrada pull-down
  */
 bool Pin_estadoSalida(HPin hpin);
 
