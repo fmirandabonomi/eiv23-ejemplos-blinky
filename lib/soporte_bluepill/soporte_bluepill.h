@@ -1,5 +1,7 @@
 #ifndef SOPORTE_BLUEPILL_H
 #define SOPORTE_BLUEPILL_H
+#include <stdbool.h>
+#include <stdint.h>
 
 // https://www.doxygen.nl/manual/commands.html
 
@@ -9,7 +11,7 @@
  * tipo "opaco" (sus detalles no son visibles), normalmente un ***índice en
  * una tabla (arreglo)***. Un ***puntero*** contiene una ***dirección de memoria***.
  */
-typedef enum HPin{
+typedef enum SBP_HPin{
     PA0,    ///< Solo 3V. Función Alternativa primaria: `[ADC0 | USART2 CTS | TIM2 CH1 | TIM2 ETR | WKUP]`
     PA1,    ///< Solo 3V. Función Alternativa primaria: `[ADC1 | USART2 RTS | TIM2 CH2]`
     PA2,    ///< Solo 3V. Función Alternativa primaria: `[ADC2 | USART2 TX  | TIM2 CH3]`
@@ -45,33 +47,37 @@ typedef enum HPin{
     PC13,   ///< Solo 3V. Conectado al led de la placa. `TAMPER RTC`
     PC14,   ///< Solo 3V. Conectado al cristal de 8 MHz. Función Alternativa primaria: `OSC32 IN`
     PC15,   ///< Solo 3V. Conectado al cristal de 8 MHz. Función Alternativa primaria: `OSC32 OUT`
-    P_LED = PC13    ///< Led integrado en la placa. Ver PC13
-} HPin;
+    P_LED = PC13,    ///< Led integrado en la placa. Ver PC13
+    HPin_NUM_HANDLES
+} SBP_HPin;
+
+#define SBP_P_LED_ON 0
+#define SBP_P_LED_OFF 1
 
 /**
  * @brief Establece la configuración inicial. 
  * 
  */
-void SBP_init();
+void SBP_init(void);
 
-typedef enum Pin_ModoPull{
+typedef enum SBP_Pin_ModoPull{
     PIN_FLOTANTE,
     PIN_PULLUP,
     PIN_PULLDOWN
-}Pin_ModoPull;
+}SBP_Pin_ModoPull;
 /**
  * @brief Configura un pin como entrada. Si es necesario activa el reloj del puerto.
  * 
  * @param hpin Handle del pin.
  * @param pull Configuración de resistencia de pull-up/pull-down 
  */
-void Pin_modoEntrada(HPin hpin, Pin_ModoPull pull);
+void SBP_Pin_modoEntrada(SBP_HPin hpin, SBP_Pin_ModoPull pull);
 
-typedef enum Pin_Velocidad{
+typedef enum SBP_Pin_Velocidad{
     PIN_2MHz,
     PIN_10MHz,
     PIN_50MHz
-}Pin_Velocidad;
+}SBP_Pin_Velocidad;
 
 /**
  * @brief Configura un pin como salida. Si es necesario activa el reloj del puerto.
@@ -80,19 +86,19 @@ typedef enum Pin_Velocidad{
  * @param velocidad Velocidad del driver.
  * @param drenadorAbierto [true: Drenador abierto, false: Push-pull (normal)]
  */
-void Pin_modoSalida(HPin hpin, Pin_Velocidad velocidad, bool drenadorAbierto);
+void SBP_Pin_modoSalida(SBP_HPin hpin, SBP_Pin_Velocidad velocidad, bool drenadorAbierto);
 
-typedef enum Pin_FlancoInterrupcion{
+typedef enum SBP_Pin_FlancoInterrupcion{
     PIN_INT_ASCENDENTE  = 0b01, ///< Interrupción en flanco ascendente
     PIN_INT_DESCENDENTE = 0b10, ///< Interrupción en flanco descendente
     PIN_INT_ASCENDENTE_Y_DESCENDENTE = PIN_INT_ASCENDENTE | PIN_INT_DESCENDENTE ///< Interrupción en ambos flancos
-}Pin_FlancoInterrupcion;
+}SBP_Pin_FlancoInterrupcion;
 
 /**
- * @typedef Pin_ExtInt_Handler 
+ * @typedef SBP_Pin_ExtInt_Handler 
  * @note No es un callback común, pues se ejecuta en modo handler.
  */
-typedef void Pin_ExtInt_Handler(void);
+typedef void SBP_Pin_ExtInt_Handler(void);
 
 /**
  * @brief Configura la interrupción externa en un pin, ya sea para flanco ascendente, descendente
@@ -104,7 +110,7 @@ typedef void Pin_ExtInt_Handler(void);
  * @param handler Puntero a rutina de handler.
  * @param flanco Flanco al que es sensible la interrupción
  */
-void Pin_configuraInterrupcionExterna(HPin hpin, Pin_ExtInt_Handler *handler, Pin_FlancoInterrupcion flanco);
+void SBP_Pin_configuraInterrupcionExterna(SBP_HPin hpin, SBP_Pin_ExtInt_Handler *handler, SBP_Pin_FlancoInterrupcion flanco);
 
 /**
  * @brief Remueve cualquier configuración de interrupción externa en un pin. Falla si los periféricos
@@ -115,7 +121,7 @@ void Pin_configuraInterrupcionExterna(HPin hpin, Pin_ExtInt_Handler *handler, Pi
  * @return false: Periférico está apagado
  * 
  */
-bool Pin_desactivaInterrupcionExterna(HPin hpin);
+bool SBP_Pin_desactivaInterrupcionExterna(SBP_HPin hpin);
 
 /**
  * @brief Lee el buffer de entrada de un pin (previamente configurado).
@@ -124,7 +130,7 @@ bool Pin_desactivaInterrupcionExterna(HPin hpin);
  * @return true Nivel ALTO
  * @return false Nivel BAJO
  */
-bool Pin_lee(HPin hpin);
+bool SBP_Pin_lee(SBP_HPin hpin);
 
 /**
  * @brief Escribe en el buffer de salida de un pin. El pin debe haber sido configurado.
@@ -132,7 +138,7 @@ bool Pin_lee(HPin hpin);
  * @param hpin Handle del pin
  * @param valor true: Nivel ***alto***, false: Nivel ***bajo***
  */
-void Pin_escribe(HPin hpin, bool valor);
+void SBP_Pin_escribe(SBP_HPin hpin, bool valor);
 
 /**
  * @brief Lee el estado del buffer de salida del pin. El pin debe haber sido configurado.
@@ -146,7 +152,13 @@ void Pin_escribe(HPin hpin, bool valor);
  * @return true: Nivel ***alto*** o entrada pull-up
  * @return false: Nivel ***bajo*** o entrada pull-down
  */
-bool Pin_estadoSalida(HPin hpin);
+bool SBP_Pin_estadoSalida(SBP_HPin hpin);
 
+/**
+ * @brief Obtiene el valor actual del contador de ticks.
+ * La cuenta se incrementa cada milisegundo.
+ * @return uint32_t tick actual
+ */
+uint32_t SBP_get_ticks(void);
 
 #endif
