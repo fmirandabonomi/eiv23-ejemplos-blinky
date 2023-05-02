@@ -35,12 +35,12 @@ uint32_t BP_get_ticks(void){
 /* Pines y exti */
 
 typedef struct PinDescriptor{
-    bool valido;
     uint8_t hGpio;
     uint8_t nrPin;
 }PinDescriptor;
 
-#define INDICE_GPIO(base) ((uint8_t)(((intptr_t)(base))>>10 & 0xFFU)) // 2..6
+#define HANDLE_GPIO(base) ((uint8_t)(((intptr_t)(base))>>10 & 0xFFU)) // 0x42..0x46
+#define GET_GPIO(h) ((GPIO_TypeDef *)(PERIPH_BASE | ((h)<<10)))
 
 #define MAX_PINS 32
 #define TWOS_POWER(x) (!((x)&((x)-1)))
@@ -49,61 +49,50 @@ typedef struct PinDescriptor{
 #endif
 
 static PinDescriptor const pines[MAX_PINS]={
-[PA0]  = {1,INDICE_GPIO(GPIOA_BASE), 0},
-[PA1]  = {1,INDICE_GPIO(GPIOA_BASE), 1},
-[PA2]  = {1,INDICE_GPIO(GPIOA_BASE), 2},
-[PA3]  = {1,INDICE_GPIO(GPIOA_BASE), 3},
-[PA4]  = {1,INDICE_GPIO(GPIOA_BASE), 4},
-[PA5]  = {1,INDICE_GPIO(GPIOA_BASE), 5},
-[PA6]  = {1,INDICE_GPIO(GPIOA_BASE), 6},
-[PA7]  = {1,INDICE_GPIO(GPIOA_BASE), 7},
-[PA8]  = {1,INDICE_GPIO(GPIOA_BASE), 8},
-[PA9]  = {1,INDICE_GPIO(GPIOA_BASE), 9},
-[PA10] = {1,INDICE_GPIO(GPIOA_BASE),10},
-[PA11] = {1,INDICE_GPIO(GPIOA_BASE),11},
-[PA12] = {1,INDICE_GPIO(GPIOA_BASE),12},
-[PA15] = {1,INDICE_GPIO(GPIOA_BASE),15},
-[PB0]  = {1,INDICE_GPIO(GPIOB_BASE), 0},
-[PB1]  = {1,INDICE_GPIO(GPIOB_BASE), 1},
-[PB3]  = {1,INDICE_GPIO(GPIOB_BASE), 3},
-[PB4]  = {1,INDICE_GPIO(GPIOB_BASE), 4},
-[PB5]  = {1,INDICE_GPIO(GPIOB_BASE), 5},
-[PB6]  = {1,INDICE_GPIO(GPIOB_BASE), 6},
-[PB7]  = {1,INDICE_GPIO(GPIOB_BASE), 7},
-[PB8]  = {1,INDICE_GPIO(GPIOB_BASE), 8},
-[PB9]  = {1,INDICE_GPIO(GPIOB_BASE), 9},
-[PB10] = {1,INDICE_GPIO(GPIOB_BASE),10},
-[PB11] = {1,INDICE_GPIO(GPIOB_BASE),11},
-[PB12] = {1,INDICE_GPIO(GPIOB_BASE),12},
-[PB13] = {1,INDICE_GPIO(GPIOB_BASE),13},
-[PB14] = {1,INDICE_GPIO(GPIOB_BASE),14},
-[PB15] = {1,INDICE_GPIO(GPIOB_BASE),15},
-[PC13] = {1,INDICE_GPIO(GPIOC_BASE),13},
-[PC14] = {1,INDICE_GPIO(GPIOC_BASE),14},
-[PC15] = {1,INDICE_GPIO(GPIOC_BASE),15}
+[PA0]  = {HANDLE_GPIO(GPIOA), 0},
+[PA1]  = {HANDLE_GPIO(GPIOA), 1},
+[PA2]  = {HANDLE_GPIO(GPIOA), 2},
+[PA3]  = {HANDLE_GPIO(GPIOA), 3},
+[PA4]  = {HANDLE_GPIO(GPIOA), 4},
+[PA5]  = {HANDLE_GPIO(GPIOA), 5},
+[PA6]  = {HANDLE_GPIO(GPIOA), 6},
+[PA7]  = {HANDLE_GPIO(GPIOA), 7},
+[PA8]  = {HANDLE_GPIO(GPIOA), 8},
+[PA9]  = {HANDLE_GPIO(GPIOA), 9},
+[PA10] = {HANDLE_GPIO(GPIOA),10},
+[PA11] = {HANDLE_GPIO(GPIOA),11},
+[PA12] = {HANDLE_GPIO(GPIOA),12},
+[PA15] = {HANDLE_GPIO(GPIOA),15},
+[PB0]  = {HANDLE_GPIO(GPIOB), 0},
+[PB1]  = {HANDLE_GPIO(GPIOB), 1},
+[PB3]  = {HANDLE_GPIO(GPIOB), 3},
+[PB4]  = {HANDLE_GPIO(GPIOB), 4},
+[PB5]  = {HANDLE_GPIO(GPIOB), 5},
+[PB6]  = {HANDLE_GPIO(GPIOB), 6},
+[PB7]  = {HANDLE_GPIO(GPIOB), 7},
+[PB8]  = {HANDLE_GPIO(GPIOB), 8},
+[PB9]  = {HANDLE_GPIO(GPIOB), 9},
+[PB10] = {HANDLE_GPIO(GPIOB),10},
+[PB11] = {HANDLE_GPIO(GPIOB),11},
+[PB12] = {HANDLE_GPIO(GPIOB),12},
+[PB13] = {HANDLE_GPIO(GPIOB),13},
+[PB14] = {HANDLE_GPIO(GPIOB),14},
+[PB15] = {HANDLE_GPIO(GPIOB),15},
+[PC13] = {HANDLE_GPIO(GPIOC),13},
+[PC14] = {HANDLE_GPIO(GPIOC),14},
+[PC15] = {HANDLE_GPIO(GPIOC),15}
 };
 
 #define GET_PIN(h) (pines[(h)%MAX_PINS])
 
-typedef struct GpioDescriptor{
-    GPIO_TypeDef * base;
-    int mascara_enr;
-}GpioDescriptor;
 
 #define MAX_GPIOS 8
 #if !TWOS_POWER(MAX_GPIOS)
 #error MAX_GPIOS debe ser potencia de dos
 #endif
 
-static GpioDescriptor const gpios[MAX_GPIOS] = {
-[INDICE_GPIO(GPIOA)&0x7U] = {GPIOA,RCC_APB2ENR_IOPAEN},
-[INDICE_GPIO(GPIOB)&0x7U] = {GPIOB,RCC_APB2ENR_IOPBEN},
-[INDICE_GPIO(GPIOC)&0x7U] = {GPIOC,RCC_APB2ENR_IOPCEN},
-// [INDICE_GPIO(GPIOD)&0x7U] = {GPIOC,RCC_APB2ENR_IOPDEN},
-// [INDICE_GPIO(GPIOE)&0x7U] = {GPIOC,RCC_APB2ENR_IOPEEN}
-};
 
-#define GET_GPIO(h) (gpios[(h)%MAX_GPIOS])
+#define GET_GPIO_ENR_MASK(hGpio) (1UL<<((hGpio)&0xF)) 
 
 typedef struct ExtiHandlerDescriptor{
     BP_Pin_ExtInt_Handler * handler;
@@ -167,25 +156,25 @@ static ExtiIrqnDescriptor exti_irq(int const nrPin){
     return irq;
 }
 
-#define GET_CR(pin,puerto) ((pin.nrPin < 8) ? &puerto.base->CRL : &puerto.base->CRH)
+#define GET_CR(pin,puerto) ((pin.nrPin < 8) ? &puerto->CRL : &puerto->CRH)
 #define GET_CR_OFFSET(pin) ((pin.nrPin % 8)*4)
 #define MASCARA_MODO 0xF
 void BP_Pin_modoEntrada(BP_HPin const hpin, BP_Pin_ModoPull const pull){
     uint32_t const modo = (pull != PIN_FLOTANTE) ? 0x8 : 0x4;
     PinDescriptor const pin = GET_PIN(hpin);
-    if (pin.valido){
-        GpioDescriptor const puerto = GET_GPIO(pin.hGpio);
+    if (pin.hGpio){
+        GPIO_TypeDef *const puerto = GET_GPIO(pin.hGpio);
         uint32_t volatile *const CR = GET_CR(pin,puerto);
         uint8_t const offset = GET_CR_OFFSET(pin); 
         __disable_irq();
-        RCC->APB2ENR |= puerto.mascara_enr;
+        RCC->APB2ENR |= GET_GPIO_ENR_MASK(pin.hGpio);
         *CR = (*CR & ~(MASCARA_MODO << offset)) | (modo << offset);
         __enable_irq();
         if (pull != PIN_FLOTANTE){
             if (pull == PIN_PULLUP)
-                puerto.base->BSRR = 1<<pin.nrPin;
+                puerto->BSRR = 1<<pin.nrPin;
             else
-                puerto.base->BRR = 1<<pin.nrPin;
+                puerto->BRR = 1<<pin.nrPin;
         }
     }
 }
@@ -194,12 +183,12 @@ void BP_Pin_modoSalida(BP_HPin hpin, BP_Pin_Velocidad velocidad, bool drenadorAb
     static uint8_t const modo_salida[4]={[PIN_2MHz]=0x2,[PIN_10MHz]=0x1,[PIN_50MHz]=0x3};
     uint32_t const modo = modo_salida[velocidad % 4] | ((drenadorAbierto)? 0x4 : 0x0);
     PinDescriptor const pin = GET_PIN(hpin);
-    if (pin.valido){
-        GpioDescriptor const puerto = GET_GPIO(pin.hGpio);
+    if (pin.hGpio){
+        GPIO_TypeDef *const puerto = GET_GPIO(pin.hGpio);
         uint32_t volatile * const CR = GET_CR(pin,puerto);
         uint8_t const offset = GET_CR_OFFSET(pin);
         __disable_irq();
-        RCC->APB2ENR |= puerto.mascara_enr;
+        RCC->APB2ENR |= GET_GPIO_ENR_MASK(pin.hGpio);
         *CR = (*CR & ~(MASCARA_MODO << offset)) | (modo << offset);
         __enable_irq();
     }
@@ -207,7 +196,7 @@ void BP_Pin_modoSalida(BP_HPin hpin, BP_Pin_Velocidad velocidad, bool drenadorAb
 void BP_Pin_configuraInterrupcionExterna(BP_HPin hpin, BP_Pin_ExtInt_Handler *handler, BP_Pin_FlancoInterrupcion flanco){
     PinDescriptor const pin = GET_PIN(hpin);
     ExtiIrqnDescriptor const irqDescriptor = exti_irq(pin.nrPin);
-    if (   pin.valido
+    if (   pin.hGpio
         && irqDescriptor.valid 
         && handler != (BP_Pin_ExtInt_Handler*) 0
         && (flanco & (PIN_INT_ASCENDENTE | PIN_INT_DESCENDENTE))){
@@ -231,7 +220,7 @@ void BP_Pin_configuraInterrupcionExterna(BP_HPin hpin, BP_Pin_ExtInt_Handler *ha
 bool BP_Pin_desactivaInterrupcionExterna(BP_HPin hpin){
     PinDescriptor const pin = GET_PIN(hpin);
     ExtiIrqnDescriptor const irqDescriptor = exti_irq(pin.nrPin); 
-    if (   pin.valido
+    if (   pin.hGpio
         && irqDescriptor.valid){
         ExtiHandlerDescriptor *const handlerDescriptor = &GET_EXTI_HANDLER(hpin);
         __disable_irq();
@@ -256,28 +245,28 @@ bool BP_Pin_desactivaInterrupcionExterna(BP_HPin hpin){
 bool BP_Pin_lee(BP_HPin hpin){
     bool resultado = false;
     PinDescriptor const pin = GET_PIN(hpin);
-    if(pin.valido){
-        GpioDescriptor const puerto = GET_GPIO(pin.hGpio);
-        resultado = puerto.base->IDR & (1 << pin.nrPin);
+    if(pin.hGpio){
+        GPIO_TypeDef *const puerto = GET_GPIO(pin.hGpio);
+        resultado = puerto->IDR & (1 << pin.nrPin);
     }
     return resultado;
 }
 void BP_Pin_escribe(BP_HPin hpin, bool valor){
     PinDescriptor const pin = GET_PIN(hpin);
-    if (pin.valido){
-        GpioDescriptor const puerto = GET_GPIO(pin.hGpio);
+    if (pin.hGpio){
+        GPIO_TypeDef *const puerto = GET_GPIO(pin.hGpio);
         if (valor)
-            puerto.base->BSRR = 1<<pin.nrPin;
+            puerto->BSRR = 1<<pin.nrPin;
         else
-            puerto.base->BRR  = 1<<pin.nrPin;
+            puerto->BRR  = 1<<pin.nrPin;
     }
 }
 bool BP_Pin_estadoSalida(BP_HPin hpin){
     bool resultado = false;
     PinDescriptor const pin = GET_PIN(hpin);
-    if(pin.valido){
-        GpioDescriptor const puerto = GET_GPIO(pin.hGpio);
-        resultado = puerto.base->ODR & (1 << pin.nrPin);
+    if(pin.hGpio){
+        GPIO_TypeDef *const puerto = GET_GPIO(pin.hGpio);
+        resultado = puerto->ODR & (1 << pin.nrPin);
     }
     return resultado;
 }
