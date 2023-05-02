@@ -15,7 +15,7 @@ void EXTI15_10_IRQHandler(void);
 
 /* General */
 
-void SBP_init(void){
+void BP_init(void){
     SystemCoreClockUpdate();
     SysTick_Config(SystemCoreClock/1000);  
 }
@@ -29,7 +29,7 @@ void SysTick_Handler(void)
     ++ticks;
 }
 
-uint32_t SBP_get_ticks(void){
+uint32_t BP_get_ticks(void){
     return ticks; // La lectura es atómica para enteros de 32 bits.
 }
 /* Pines y exti */
@@ -106,8 +106,8 @@ static GpioDescriptor const gpios[MAX_GPIOS] = {
 #define GET_GPIO(h) (gpios[(h)%MAX_GPIOS])
 
 typedef struct ExtiHandlerDescriptor{
-    SBP_Pin_ExtInt_Handler * handler;
-    SBP_Pin_FlancoInterrupcion flanco;
+    BP_Pin_ExtInt_Handler * handler;
+    BP_Pin_FlancoInterrupcion flanco;
     bool valido;
 }ExtiHandlerDescriptor;
 
@@ -170,7 +170,7 @@ static ExtiIrqnDescriptor exti_irq(int const nrPin){
 #define GET_CR(pin,puerto) ((pin.nrPin < 8) ? &puerto.base->CRL : &puerto.base->CRH)
 #define GET_CR_OFFSET(pin) ((pin.nrPin % 8)*4)
 #define MASCARA_MODO 0xF
-void SBP_Pin_modoEntrada(SBP_HPin const hpin, SBP_Pin_ModoPull const pull){
+void BP_Pin_modoEntrada(BP_HPin const hpin, BP_Pin_ModoPull const pull){
     uint32_t const modo = (pull != PIN_FLOTANTE) ? 0x8 : 0x4;
     PinDescriptor const pin = GET_PIN(hpin);
     if (pin.valido){
@@ -190,7 +190,7 @@ void SBP_Pin_modoEntrada(SBP_HPin const hpin, SBP_Pin_ModoPull const pull){
     }
 }
 
-void SBP_Pin_modoSalida(SBP_HPin hpin, SBP_Pin_Velocidad velocidad, bool drenadorAbierto){
+void BP_Pin_modoSalida(BP_HPin hpin, BP_Pin_Velocidad velocidad, bool drenadorAbierto){
     static uint8_t const modo_salida[4]={[PIN_2MHz]=0x2,[PIN_10MHz]=0x1,[PIN_50MHz]=0x3};
     uint32_t const modo = modo_salida[velocidad % 4] | ((drenadorAbierto)? 0x4 : 0x0);
     PinDescriptor const pin = GET_PIN(hpin);
@@ -204,12 +204,12 @@ void SBP_Pin_modoSalida(SBP_HPin hpin, SBP_Pin_Velocidad velocidad, bool drenado
         __enable_irq();
     }
 }
-void SBP_Pin_configuraInterrupcionExterna(SBP_HPin hpin, SBP_Pin_ExtInt_Handler *handler, SBP_Pin_FlancoInterrupcion flanco){
+void BP_Pin_configuraInterrupcionExterna(BP_HPin hpin, BP_Pin_ExtInt_Handler *handler, BP_Pin_FlancoInterrupcion flanco){
     PinDescriptor const pin = GET_PIN(hpin);
     ExtiIrqnDescriptor const irqDescriptor = exti_irq(pin.nrPin);
     if (   pin.valido
         && irqDescriptor.valid 
-        && handler != (SBP_Pin_ExtInt_Handler*) 0
+        && handler != (BP_Pin_ExtInt_Handler*) 0
         && (flanco & (PIN_INT_ASCENDENTE | PIN_INT_DESCENDENTE))){
         ExtiHandlerDescriptor *const handlerDescriptor = &GET_EXTI_HANDLER(hpin);
         __disable_irq();
@@ -228,7 +228,7 @@ void SBP_Pin_configuraInterrupcionExterna(SBP_HPin hpin, SBP_Pin_ExtInt_Handler 
         __enable_irq();
     }
 }
-bool SBP_Pin_desactivaInterrupcionExterna(SBP_HPin hpin){
+bool BP_Pin_desactivaInterrupcionExterna(BP_HPin hpin){
     PinDescriptor const pin = GET_PIN(hpin);
     ExtiIrqnDescriptor const irqDescriptor = exti_irq(pin.nrPin); 
     if (   pin.valido
@@ -253,7 +253,7 @@ bool SBP_Pin_desactivaInterrupcionExterna(SBP_HPin hpin){
     }
     return false;
 }
-bool SBP_Pin_lee(SBP_HPin hpin){
+bool BP_Pin_lee(BP_HPin hpin){
     bool resultado = false;
     PinDescriptor const pin = GET_PIN(hpin);
     if(pin.valido){
@@ -262,7 +262,7 @@ bool SBP_Pin_lee(SBP_HPin hpin){
     }
     return resultado;
 }
-void SBP_Pin_escribe(SBP_HPin hpin, bool valor){
+void BP_Pin_escribe(BP_HPin hpin, bool valor){
     PinDescriptor const pin = GET_PIN(hpin);
     if (pin.valido){
         GpioDescriptor const puerto = GET_GPIO(pin.hGpio);
@@ -272,7 +272,7 @@ void SBP_Pin_escribe(SBP_HPin hpin, bool valor){
             puerto.base->BRR  = 1<<pin.nrPin;
     }
 }
-bool SBP_Pin_estadoSalida(SBP_HPin hpin){
+bool BP_Pin_estadoSalida(BP_HPin hpin){
     bool resultado = false;
     PinDescriptor const pin = GET_PIN(hpin);
     if(pin.valido){
@@ -283,10 +283,10 @@ bool SBP_Pin_estadoSalida(SBP_HPin hpin){
 }
 
 
-static void despacha_exti_pin(SBP_HPin hPin){
+static void despacha_exti_pin(BP_HPin hPin){
     ExtiHandlerDescriptor const hd = GET_EXTI_HANDLER(hPin);
     if (hd.valido){
-        SBP_Pin_FlancoInterrupcion const flanco = (SBP_Pin_lee(hPin)) ? PIN_INT_ASCENDENTE : 
+        BP_Pin_FlancoInterrupcion const flanco = (BP_Pin_lee(hPin)) ? PIN_INT_ASCENDENTE : 
                                                                 PIN_INT_DESCENDENTE;
         if (hd.flanco & flanco)
             hd.handler();
