@@ -60,9 +60,26 @@ typedef enum BP_HPin{
  */
 void BP_init(void);
 
+/**
+ * @brief Cuando los pines son usados como entradas, pueden configurarse con
+ * pull-up o pull-down.
+ * 
+ */
 typedef enum BP_Pin_ModoPull{
+    /**
+     * @brief Entrada flotante o libre, sin ningun forzante interno.
+     * 
+     */
     PIN_FLOTANTE,
+    /**
+     * @brief Entrada con resistencia interna forzante a nivel alto.
+     * 
+     */
     PIN_PULLUP,
+    /**
+     * @brief Entrada con resistencia interna forzante a nivel bajo.
+     * 
+     */
     PIN_PULLDOWN
 }BP_Pin_ModoPull;
 /**
@@ -74,8 +91,20 @@ typedef enum BP_Pin_ModoPull{
 void BP_Pin_modoEntrada(BP_HPin hpin, BP_Pin_ModoPull pull);
 
 typedef enum BP_Pin_Velocidad{
+    /**
+     * @brief Salida con driver capaz de una frecuencia máxima de 2MHz.
+     * 
+     */
     PIN_2MHz,
+    /**
+     * @brief Salida con driver capaz de una frecuencia máxima de 10MHz.
+     * 
+     */
     PIN_10MHz,
+    /**
+     * @brief Salida con driver capaz de una frecuencai máxima de 50MHz.
+     * 
+     */
     PIN_50MHz
 }BP_Pin_Velocidad;
 
@@ -109,8 +138,10 @@ typedef void BP_Pin_ExtInt_Handler(void);
  * @param hpin Handle del pin 
  * @param handler Puntero a rutina de handler.
  * @param flanco Flanco al que es sensible la interrupción
+ * @return true Configuración exitosa.
+ * @return false Interrupción ya configurada (solo puede haber una rutina por pin).
  */
-void BP_Pin_configuraInterrupcionExterna(BP_HPin hpin, BP_Pin_ExtInt_Handler *handler, BP_Pin_FlancoInterrupcion flanco);
+bool BP_Pin_configuraInterrupcionExterna(BP_HPin hpin, BP_Pin_ExtInt_Handler *handler, BP_Pin_FlancoInterrupcion flanco);
 
 /**
  * @brief Remueve cualquier configuración de interrupción externa en un pin. Falla si los periféricos
@@ -118,7 +149,7 @@ void BP_Pin_configuraInterrupcionExterna(BP_HPin hpin, BP_Pin_ExtInt_Handler *ha
  * 
  * @param hpin Handle del pin
  * @return true: Configuración removida
- * @return false: Periférico está apagado
+ * @return false: No había interrupción
  * 
  */
 bool BP_Pin_desactivaInterrupcionExterna(BP_HPin hpin);
@@ -159,11 +190,11 @@ bool BP_Pin_estadoSalida(BP_HPin hpin);
  * La cuenta se incrementa cada milisegundo.
  * @return uint32_t tick actual
  */
-uint32_t BP_get_ticks(void);
+uint32_t BP_getTicks(void);
 
 /**
  * @brief Detiene el reloj del procesador hasta que ocurra una interrupción
  * 
  */
-void espera_interrupcion(void);
+void BP_esperaInterrupcion(void);
 #endif

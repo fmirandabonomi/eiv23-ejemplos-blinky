@@ -20,7 +20,7 @@ void BP_init(void){
     SysTick_Config(SystemCoreClock/1000);  
 }
 
-void espera_interrupcion(void){
+void BP_esperaInterrupcion(void){
     __WFI();
 }
 
@@ -33,7 +33,7 @@ void SysTick_Handler(void)
     ++ticks;
 }
 
-uint32_t BP_get_ticks(void){
+uint32_t BP_getTicks(void){
     return ticks; // La lectura es atómica para enteros de 32 bits.
 }
 /* Pines y exti */
@@ -197,33 +197,37 @@ void BP_Pin_modoSalida(BP_HPin hpin, BP_Pin_Velocidad velocidad, bool drenadorAb
         __enable_irq();
     }
 }
-void BP_Pin_configuraInterrupcionExterna(BP_HPin hpin, BP_Pin_ExtInt_Handler *handler, BP_Pin_FlancoInterrupcion flanco){
+bool BP_Pin_configuraInterrupcionExterna(BP_HPin hpin, BP_Pin_ExtInt_Handler *handler, BP_Pin_FlancoInterrupcion flanco){
     PinDescriptor const pin = GET_PIN(hpin);
     ExtiIrqnDescriptor const irqDescriptor = exti_irq(pin.nrPin);
+    bool resultado = false;
     if (   pin.hGpio
         && irqDescriptor.valid 
         && handler != (BP_Pin_ExtInt_Handler*) 0
         && (flanco & (PIN_INT_ASCENDENTE | PIN_INT_DESCENDENTE))){
         ExtiHandlerDescriptor *const handlerDescriptor = &GET_EXTI_HANDLER(hpin);
         __disable_irq();
-        handlerDescriptor->flanco = flanco;
-        handlerDescriptor->handler = handler;
         if (!handlerDescriptor->valido){
+            handlerDescriptor->flanco = flanco;
+            handlerDescriptor->handler = handler;
             exti_count_up(pin.nrPin);
+            handlerDescriptor->valido = true;
+            uint32_t const mascara = 1UL << pin.nrPin; 
+            if (flanco & PIN_INT_ASCENDENTE)  EXTI->RTSR |= mascara;
+            if (flanco & PIN_INT_DESCENDENTE) EXTI->FTSR |= mascara;
+            EXTI->PR = mascara;   // ignora IRQ pendiente anterior
+            EXTI->EMR |= mascara;
+            NVIC_EnableIRQ(irqDescriptor.irqn);
+            resultado = true;
         }
-        handlerDescriptor->valido = true;
-        uint32_t const mascara = 1UL << pin.nrPin; 
-        if (flanco & PIN_INT_ASCENDENTE)  EXTI->RTSR |= mascara;
-        if (flanco & PIN_INT_DESCENDENTE) EXTI->FTSR |= mascara;
-        EXTI->PR = mascara;   // ignora IRQ pendiente anterior
-        EXTI->EMR |= mascara;
-        NVIC_EnableIRQ(irqDescriptor.irqn);
         __enable_irq();
     }
+    return resultado;
 }
 bool BP_Pin_desactivaInterrupcionExterna(BP_HPin hpin){
     PinDescriptor const pin = GET_PIN(hpin);
     ExtiIrqnDescriptor const irqDescriptor = exti_irq(pin.nrPin); 
+    bool resultado = false;
     if (   pin.hGpio
         && irqDescriptor.valid){
         ExtiHandlerDescriptor *const handlerDescriptor = &GET_EXTI_HANDLER(hpin);
@@ -241,10 +245,11 @@ bool BP_Pin_desactivaInterrupcionExterna(BP_HPin hpin){
                 if (!(EXTI->IMR & irqDescriptor.extiMask))
                     NVIC_DisableIRQ(irqDescriptor.irqn);
             }
+            resultado = true;
         }
         __enable_irq();
     }
-    return false;
+    return resultado;
 }
 bool BP_Pin_lee(BP_HPin hpin){
     bool resultado = false;
