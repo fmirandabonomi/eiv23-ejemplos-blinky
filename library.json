@@ -1,8 +1,9 @@
 {
     "$schema": "https://raw.githubusercontent.com/platformio/platformio-core/develop/platformio/assets/schema/library.json",
     "name": "Eiv23-SoporteBluepill",
-    "version": "0.0.2",
+    "version": "0.0.2b",
+    "description": "+ Corrección de error en manifiesto",
     "build":{
-        "srcDir": "lib"
+        "srcDir": "lib/soporte_bluepill"
     }
 }
