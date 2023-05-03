@@ -161,4 +161,9 @@ bool BP_Pin_estadoSalida(BP_HPin hpin);
  */
 uint32_t BP_get_ticks(void);
 
+/**
+ * @brief Detiene el reloj del procesador hasta que ocurra una interrupción
+ * 
+ */
+void espera_interrupcion(void);
 #endif

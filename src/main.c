@@ -7,6 +7,8 @@ int main(void){
     BP_Pin_modoSalida(P_LED,PIN_2MHz,false);
     bool estado_led = BP_P_LED_OFF;
     BP_Pin_escribe(P_LED,estado_led);
+    BP_Pin_modoSalida(PB9,PIN_2MHz,false);
+    BP_Pin_escribe(PB9,0);
     for(;;){
         const uint32_t nticks = BP_get_ticks();
         if (nticks-ticks >= 500){
@@ -14,6 +16,9 @@ int main(void){
             estado_led = !estado_led;
             BP_Pin_escribe(P_LED,estado_led);
         }
+        BP_Pin_escribe(PB9,1);
+        espera_interrupcion();
+        BP_Pin_escribe(PB9,0);
     }
     return 0;
 }

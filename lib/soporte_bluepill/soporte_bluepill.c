@@ -20,6 +20,10 @@ void BP_init(void){
     SysTick_Config(SystemCoreClock/1000);  
 }
 
+void espera_interrupcion(void){
+    __WFI();
+}
+
 /* SysTick */
 
 static uint32_t volatile ticks;
