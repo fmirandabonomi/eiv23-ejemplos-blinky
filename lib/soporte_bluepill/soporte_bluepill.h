@@ -227,6 +227,26 @@ void BP_esperaInterrupcion(void);
  * @note El handler es llamado desde una interrupción y debe minimizar el
  * trabajo realizado para evitar problemas de latencia.
  * 
+ * Para configurar el máximo número de retardos activos usar la opción
+ * -DMAX_RETARDOS_ACTIVOS=n donde "n" es el máximo elegido (el define se 
+ * pasa como opción al compilador a la hora de compilar).
+ * El valor por defecto es 8, lo que equivale una opción
+ * -DMAX_RETARDOS_ACTIVOS=8
+ * 
+ * Por defecto se usa una rutina basada en lista prioritaria, que tiene un tiempo
+ * promedio más rápido (del orden de 40 ciclos independiente de la cantidad de 
+ * retardos), pero al momento de deber ejecutar o agregar/quitar retardos toma
+ * un tiempo considerablemente mayor, que crece con el log2 del número máximo 
+ * de retardos activos (del orden de 230 ciclos al momento de llamada a handler
+ * para 8 retardos activos)
+ *  
+ * Otra opción es una rutina de decremento de contadores, que ocupa
+ * más procesador en promedio (del orden de 120 ciclos cada tick para 8
+ * retardos). Sin embargo, el tiempo es proporcional al MAXIMO DE RETARDOS
+ * ACTIVOS y aproximadamente constante. Además el código es considerablemente 
+ * mas pequeño. Para activar esta versión usar la opción
+ * -DRETARDO_CON_CONTADORES
+ * 
  * @param tiempo Tiempo hasta efectuar la llamada, en milisegundos
  * @param handler Puntero a objeto handler
  * @return true Pedido registrado con éxito

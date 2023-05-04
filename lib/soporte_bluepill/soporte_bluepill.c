@@ -2,6 +2,21 @@
 #include <stm32f1xx.h>
 #include <system_stm32f1xx.h>
 
+#ifdef TRACE_PA5_PA6
+#define TRACE_PA5_ENTRY() (GPIOA->BSRR = 1 << 5)
+#define TRACE_PA5_EXIT()  (GPIOA->BRR  = 1 << 5)
+#define TRACE_PA6_ENTRY() (GPIOA->BSRR = 1 << 6)
+#define TRACE_PA6_EXIT()  (GPIOA->BRR  = 1 << 6)
+#else
+#define TRACE_PA5_ENTRY()
+#define TRACE_PA5_EXIT()
+#define TRACE_PA6_ENTRY()
+#define TRACE_PA6_EXIT()
+#endif
+
+#define CRITICO_INICIO() __disable_irq()
+#define CRITICO_FIN() __enable_irq()
+
 /* Vectores de interrupción */
 
 void SysTick_Handler(void);
@@ -26,17 +41,56 @@ void BP_esperaInterrupcion(void){
 
 /* SysTick */
 
-#ifndef MAX_ELEM_RETARDO
-#define MAX_ELEM_RETARDO 8
+#ifndef MAX_RETARDOS_ACTIVOS
+#define MAX_RETARDOS_ACTIVOS 8
 #endif
+
+static uint32_t volatile ticks;
 
 typedef struct DescriptorRetardo {
     BP_HandlerObject * elem;
     uint32_t vencimiento;
 }DescriptorRetardo;
+
+
+#ifdef RETARDO_CON_CONTADORES
+
+DescriptorRetardo retardos[MAX_RETARDOS_ACTIVOS];
+static void ejecuta_retardos(uint32_t ref){
+    (void)ref;
+    for (int i=0;i<MAX_RETARDOS_ACTIVOS;++i){
+        DescriptorRetardo *const dr = &retardos[i];
+        if(!dr->vencimiento) continue; // Retardo no especificado
+        --dr->vencimiento;
+        if(!dr->vencimiento && dr->elem){ // Retardo vencido
+            TRACE_PA6_ENTRY();
+            dr->elem->handler(dr->elem);
+            TRACE_PA6_EXIT();
+        }
+    }
+}
+
+bool BP_retardo(uint32_t tiempo, BP_HandlerObject *handler){
+    bool resultado = false;
+    CRITICO_INICIO();
+    for (int i=0;i<MAX_RETARDOS_ACTIVOS;++i){
+        DescriptorRetardo *const descriptor = &retardos[i];
+        if (!descriptor->vencimiento){
+            descriptor->elem = handler;
+            descriptor->vencimiento = tiempo;
+            resultado = true;
+            break;
+        }
+    }
+    CRITICO_FIN();
+    return resultado;
+}
+
+#else // Retardo con lista prioritaria y vencimientos
+
 typedef struct BHeapRetardo{
     int cuenta;
-    DescriptorRetardo mem[MAX_ELEM_RETARDO];
+    DescriptorRetardo mem[MAX_RETARDOS_ACTIVOS];
 }volatile BHeapRetardo;
 
 static BHeapRetardo heapRetardo={0};
@@ -51,14 +105,16 @@ static BHeapRetardo heapRetardo={0};
  * @return true Accion ejecutada
  * @return false No había acción para ejecutar
  */
-static bool ejecuta_primera_accion_retardada(uint32_t ref){
+static bool ejecuta_proximo_retardo(uint32_t const ref){
     int c = heapRetardo.cuenta;
     bool rval = false;
     DescriptorRetardo m = heapRetardo.mem[0];
 
     if (c > 0 && m.vencimiento == ref){
         if (m.elem){
+            TRACE_PA6_ENTRY();
             m.elem->handler(m.elem);
+            TRACE_PA6_EXIT();
         }
         rval = true;
         m = heapRetardo.mem[--c];
@@ -100,20 +156,16 @@ static bool ejecuta_primera_accion_retardada(uint32_t ref){
     return rval;
 }
 
-static uint32_t volatile ticks;
-
-void SysTick_Handler(void)
-{
-    uint32_t ref = ++ticks;
-    while(ejecuta_primera_accion_retardada(ref));
+static void ejecuta_retardos(uint32_t ref){
+    while(ejecuta_proximo_retardo(ref));
 }
 
 bool BP_retardo(uint32_t tiempo, BP_HandlerObject *handler)
 {
     bool rval = false;
-    __disable_irq();
+    CRITICO_INICIO();
     int c = heapRetardo.cuenta;
-    if (c < MAX_ELEM_RETARDO && tiempo > 0){
+    if (c < MAX_RETARDOS_ACTIVOS && tiempo > 0){
         int i = c;
         ++c;
         rval = true;
@@ -132,9 +184,23 @@ bool BP_retardo(uint32_t tiempo, BP_HandlerObject *handler)
         }
     }
     heapRetardo.cuenta = c;
-    __enable_irq();
+    CRITICO_FIN();
     return rval;
 }
+
+#endif
+
+
+
+
+void SysTick_Handler(void)
+{
+    TRACE_PA5_ENTRY();
+    uint32_t ref = ++ticks;
+    ejecuta_retardos(ref);
+    TRACE_PA5_EXIT();
+}
+
 
 uint32_t BP_getTicks(void){
     return ticks; // La lectura es atómica para enteros de 32 bits.
@@ -266,10 +332,10 @@ void BP_Pin_modoEntrada(BP_HPin const hpin, BP_Pin_ModoPull const pull){
         GPIO_TypeDef *const puerto = GET_GPIO(pin.hGpio);
         uint32_t volatile *const CR = GET_CR(pin,puerto);
         uint8_t const offset = GET_CR_OFFSET(pin); 
-        __disable_irq();
+        CRITICO_INICIO();
         RCC->APB2ENR |= GET_GPIO_ENR_MASK(pin.hGpio);
         *CR = (*CR & ~(MASCARA_MODO << offset)) | (modo << offset);
-        __enable_irq();
+        CRITICO_FIN();
         if (pull != PIN_FLOTANTE){
             if (pull == PIN_PULLUP)
                 puerto->BSRR = 1<<pin.nrPin;
@@ -287,10 +353,10 @@ void BP_Pin_modoSalida(BP_HPin hpin, BP_Pin_Velocidad velocidad, bool drenadorAb
         GPIO_TypeDef *const puerto = GET_GPIO(pin.hGpio);
         uint32_t volatile * const CR = GET_CR(pin,puerto);
         uint8_t const offset = GET_CR_OFFSET(pin);
-        __disable_irq();
+        CRITICO_INICIO();
         RCC->APB2ENR |= GET_GPIO_ENR_MASK(pin.hGpio);
         *CR = (*CR & ~(MASCARA_MODO << offset)) | (modo << offset);
-        __enable_irq();
+        CRITICO_FIN();
     }
 }
 
@@ -310,7 +376,7 @@ bool BP_Pin_configuraInterrupcionExterna(BP_HPin hpin, BP_HandlerObject *handler
         && handler != (BP_HandlerObject*) 0
         && (flanco & (PIN_INT_ASCENDENTE | PIN_INT_DESCENDENTE))){
         ExtiHandlerDescriptor *const handlerDescriptor = &GET_EXTI_HANDLER(pin.nrPin);
-        __disable_irq();
+        CRITICO_INICIO();
         if (!handlerDescriptor->handler){
             handlerDescriptor->flanco = flanco;
             handlerDescriptor->hPin = hpin;  
@@ -324,7 +390,7 @@ bool BP_Pin_configuraInterrupcionExterna(BP_HPin hpin, BP_HandlerObject *handler
             NVIC_EnableIRQ(irqDescriptor.irqn);
             resultado = true;
         }
-        __enable_irq();
+        CRITICO_FIN();
     }
     return resultado;
 }
@@ -335,7 +401,7 @@ bool BP_Pin_desactivaInterrupcionExterna(BP_HPin hpin){
     if (   pin.hGpio
         && irqDescriptor.extiMask){
         ExtiHandlerDescriptor *const handlerDescriptor = &GET_EXTI_HANDLER(hpin);
-        __disable_irq();
+        CRITICO_INICIO();
         if (handlerDescriptor->handler){
             handlerDescriptor->handler = (BP_HandlerObject*){0};
             uint32_t const mascara = 1UL << pin.nrPin;
@@ -347,7 +413,7 @@ bool BP_Pin_desactivaInterrupcionExterna(BP_HPin hpin){
                 NVIC_DisableIRQ(irqDescriptor.irqn);
             resultado = true;
         }
-        __enable_irq();
+        CRITICO_FIN();
     }
     return resultado;
 }
