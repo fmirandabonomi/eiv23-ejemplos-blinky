@@ -124,10 +124,33 @@ typedef enum BP_Pin_FlancoInterrupcion{
 }BP_Pin_FlancoInterrupcion;
 
 /**
- * @typedef BP_Pin_ExtInt_Handler 
- * @note No es un callback común, pues se ejecuta en modo handler.
+ * @brief Tipo de dato del parámetro pasado a la rutina handler.
+ * @note Es un tipo calificado const
+ * 
  */
-typedef void BP_Pin_ExtInt_Handler(void);
+typedef struct BP_HandlerObject const BP_HandlerObject;
+
+
+/**
+ * @brief Función a ser llamada desde una rutina de interrupción para atender a un evento
+ * @note No es un callback común, pues se ejecuta en modo handler. Minimizar el procesamiento
+ * en el handler para evitar problemas de latencia.
+ * @param param Parámetro suministrado al registrar el handler
+ */
+typedef void BP_Handler(BP_HandlerObject * param);
+
+/**
+ * @brief Especializar esta clase si es necesario pasar parámetros al handler.
+ * @note Tener en cuenta que la versión usada es calificada constante.
+ */
+struct BP_HandlerObject{
+    /**
+     * @brief Puntero a rutina handler. 
+     * @note No es un callback común, pues se ejecuta en modo handler. Minimizar el procesamiento
+     * en el handler para evitar problemas de latencia.
+     */
+    BP_Handler *handler;
+};
 
 /**
  * @brief Configura la interrupción externa en un pin, ya sea para flanco ascendente, descendente
@@ -137,11 +160,12 @@ typedef void BP_Pin_ExtInt_Handler(void);
  * 
  * @param hpin Handle del pin 
  * @param handler Puntero a rutina de handler.
+ * @param param Parámetro a pasar a handler.
  * @param flanco Flanco al que es sensible la interrupción
  * @return true Configuración exitosa.
  * @return false Interrupción ya configurada (solo puede haber una rutina por pin).
  */
-bool BP_Pin_configuraInterrupcionExterna(BP_HPin hpin, BP_Pin_ExtInt_Handler *handler, BP_Pin_FlancoInterrupcion flanco);
+bool BP_Pin_configuraInterrupcionExterna(BP_HPin hpin, BP_HandlerObject *handler, BP_Pin_FlancoInterrupcion flanco);
 
 /**
  * @brief Remueve cualquier configuración de interrupción externa en un pin. Falla si los periféricos
@@ -197,4 +221,16 @@ uint32_t BP_getTicks(void);
  * 
  */
 void BP_esperaInterrupcion(void);
+
+/**
+ * @brief Llama a una rutina luego de transcurrido el tiempo prescrito.
+ * @note El handler es llamado desde una interrupción y debe minimizar el
+ * trabajo realizado para evitar problemas de latencia.
+ * 
+ * @param tiempo Tiempo hasta efectuar la llamada, en milisegundos
+ * @param handler Puntero a objeto handler
+ * @return true Pedido registrado con éxito
+ * @return false Recurso agotado
+ */
+bool BP_retardo(uint32_t tiempo, BP_HandlerObject *handler);
 #endif

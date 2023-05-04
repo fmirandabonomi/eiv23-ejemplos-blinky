@@ -26,16 +26,118 @@ void BP_esperaInterrupcion(void){
 
 /* SysTick */
 
+#ifndef MAX_ELEM_RETARDO
+#define MAX_ELEM_RETARDO 8
+#endif
+
+typedef struct DescriptorRetardo {
+    BP_HandlerObject * elem;
+    uint32_t vencimiento;
+}DescriptorRetardo;
+typedef struct BHeapRetardo{
+    int cuenta;
+    DescriptorRetardo mem[MAX_ELEM_RETARDO];
+}volatile BHeapRetardo;
+
+static BHeapRetardo heapRetardo={0};
+
+#define BHeap_LEFT_CHILD(N) (2*(N)+1)
+#define BHeap_RIGHT_CHILD(N) (2*(N)+2)
+#define BHeap_PARENT(N) (((N)-1)/2)
+
+/**
+ * @brief Si la acción retardada de vencimiento más próximo venció la ejecuta
+ * @param ref Tiempo actual
+ * @return true Accion ejecutada
+ * @return false No había acción para ejecutar
+ */
+static bool ejecuta_primera_accion_retardada(uint32_t ref){
+    int c = heapRetardo.cuenta;
+    bool rval = false;
+    DescriptorRetardo m = heapRetardo.mem[0];
+
+    if (c > 0 && m.vencimiento == ref){
+        if (m.elem) m.elem->handler(m.elem);
+        rval = true;
+        heapRetardo.mem[0] = heapRetardo.mem[--c];
+        bool hecho = false;
+        int i=0;
+        while (!hecho && (BHeap_RIGHT_CHILD(i) < c)){
+            DescriptorRetardo cl = heapRetardo.mem[BHeap_LEFT_CHILD(i)];
+            DescriptorRetardo cr = heapRetardo.mem[BHeap_RIGHT_CHILD(i)];
+            if (cl.vencimiento - ref < cr.vencimiento - ref){
+                if (cl.vencimiento - ref < m.vencimiento - ref){
+                    heapRetardo.mem[BHeap_LEFT_CHILD(i)] = m;
+                    heapRetardo.mem[i] = cl;
+                    i = BHeap_LEFT_CHILD(i);
+                }else{
+                    hecho = true;
+                    break; // No es necesario seguir
+                }
+            }else{
+                if (cr.vencimiento - ref < m.vencimiento - ref){
+                    heapRetardo.mem[BHeap_RIGHT_CHILD(i)] = m;
+                    heapRetardo.mem[i] = cr;
+                    i = BHeap_RIGHT_CHILD(i);
+                }else{
+                    hecho = true;
+                    break; // No es necesario seguir
+                }
+            }
+        }
+        if (!hecho && (BHeap_LEFT_CHILD(i) < c)){
+            DescriptorRetardo cl = heapRetardo.mem[BHeap_LEFT_CHILD(i)];
+            if (cl.vencimiento - ref < m.vencimiento - ref){
+                heapRetardo.mem[BHeap_LEFT_CHILD(i)] = m;
+                heapRetardo.mem[i] = cl;
+            }
+        }
+    }
+    heapRetardo.cuenta = c;
+    return rval;
+}
+
 static uint32_t volatile ticks;
 
 void SysTick_Handler(void)
 {
-    ++ticks;
+    uint32_t ref = ++ticks;
+    while(ejecuta_primera_accion_retardada(ref));
+}
+
+bool BP_retardo(uint32_t tiempo, BP_HandlerObject *handler)
+{
+    bool rval = false;
+    __disable_irq();
+    int c = heapRetardo.cuenta;
+    if (c < MAX_ELEM_RETARDO && tiempo > 0){
+        int i = c;
+        ++c;
+        rval = true;
+        uint32_t ref = ticks;
+        DescriptorRetardo m = {.elem=handler,.vencimiento=tiempo + ref};
+        heapRetardo.mem[i]=m;
+        while(i>0){
+            DescriptorRetardo p = heapRetardo.mem[BHeap_PARENT(i)];
+            if (tiempo < p.vencimiento-ref){
+                heapRetardo.mem[BHeap_PARENT(i)] = m;
+                heapRetardo.mem[i] = p;
+                i  = BHeap_PARENT(i);
+            }else{
+                break; // terminado
+            }
+        }
+    }
+    heapRetardo.cuenta = c;
+    __enable_irq();
+    return rval;
 }
 
 uint32_t BP_getTicks(void){
     return ticks; // La lectura es atómica para enteros de 32 bits.
 }
+
+
 /* Pines y exti */
 
 typedef struct PinDescriptor{
@@ -99,9 +201,8 @@ static PinDescriptor const pines[MAX_PINS]={
 #define GET_GPIO_ENR_MASK(hGpio) (1UL<<((hGpio)&0xF)) 
 
 typedef struct ExtiHandlerDescriptor{
-    BP_Pin_ExtInt_Handler * handler;
+    BP_HandlerObject * handler;
     BP_Pin_FlancoInterrupcion flanco;
-    bool valido;
 }ExtiHandlerDescriptor;
 
 static ExtiHandlerDescriptor exti_handlers[MAX_PINS]={0};
@@ -125,12 +226,19 @@ static void exti_count_down(int const nrPin){
 }
 
 typedef struct ExtiIrqnDescriptor{
-    bool valid;
+    /**
+     * @brief Número de IRQ
+     * 
+     */
     IRQn_Type irqn;
+    /**
+     * @brief Máscara que indica las EXTI cubiertas por esta IRQ
+     * @note un valor de 0 indica que el descriptor es inválido
+     */
     uint32_t extiMask;
 }ExtiIrqnDescriptor;
 #define ExtiIrqnDescriptor_VALID(irqn_,extiMask_) ((ExtiIrqnDescriptor){\
-    .valid=true,.irqn=(irqn_),.extiMask=(extiMask_)})
+    .irqn=(irqn_),.extiMask=(extiMask_)})
 #define ExtiIrqnDescriptor_INVALID ((ExtiIrqnDescriptor){0})
 
 static ExtiIrqnDescriptor exti_irq(int const nrPin){
@@ -197,21 +305,20 @@ void BP_Pin_modoSalida(BP_HPin hpin, BP_Pin_Velocidad velocidad, bool drenadorAb
         __enable_irq();
     }
 }
-bool BP_Pin_configuraInterrupcionExterna(BP_HPin hpin, BP_Pin_ExtInt_Handler *handler, BP_Pin_FlancoInterrupcion flanco){
+bool BP_Pin_configuraInterrupcionExterna(BP_HPin hpin, BP_HandlerObject *handler, BP_Pin_FlancoInterrupcion flanco){
     PinDescriptor const pin = GET_PIN(hpin);
     ExtiIrqnDescriptor const irqDescriptor = exti_irq(pin.nrPin);
     bool resultado = false;
     if (   pin.hGpio
-        && irqDescriptor.valid 
-        && handler != (BP_Pin_ExtInt_Handler*) 0
+        && irqDescriptor.extiMask
+        && handler != (BP_HandlerObject*) 0
         && (flanco & (PIN_INT_ASCENDENTE | PIN_INT_DESCENDENTE))){
         ExtiHandlerDescriptor *const handlerDescriptor = &GET_EXTI_HANDLER(hpin);
         __disable_irq();
-        if (!handlerDescriptor->valido){
+        if (!handlerDescriptor->handler){
             handlerDescriptor->flanco = flanco;
             handlerDescriptor->handler = handler;
             exti_count_up(pin.nrPin);
-            handlerDescriptor->valido = true;
             uint32_t const mascara = 1UL << pin.nrPin; 
             if (flanco & PIN_INT_ASCENDENTE)  EXTI->RTSR |= mascara;
             if (flanco & PIN_INT_DESCENDENTE) EXTI->FTSR |= mascara;
@@ -229,11 +336,11 @@ bool BP_Pin_desactivaInterrupcionExterna(BP_HPin hpin){
     ExtiIrqnDescriptor const irqDescriptor = exti_irq(pin.nrPin); 
     bool resultado = false;
     if (   pin.hGpio
-        && irqDescriptor.valid){
+        && irqDescriptor.extiMask){
         ExtiHandlerDescriptor *const handlerDescriptor = &GET_EXTI_HANDLER(hpin);
         __disable_irq();
-        if (handlerDescriptor->valido){
-            handlerDescriptor->valido = false;
+        if (handlerDescriptor->handler){
+            handlerDescriptor->handler = (BP_HandlerObject*){0};
             exti_count_down(pin.nrPin);
             if (!exti_get_count(pin.nrPin)){
                 uint32_t const mascara = 1UL << pin.nrPin;
@@ -283,11 +390,11 @@ bool BP_Pin_estadoSalida(BP_HPin hpin){
 
 static void despacha_exti_pin(BP_HPin hPin){
     ExtiHandlerDescriptor const hd = GET_EXTI_HANDLER(hPin);
-    if (hd.valido){
+    if (hd.handler){
         BP_Pin_FlancoInterrupcion const flanco = (BP_Pin_lee(hPin)) ? PIN_INT_ASCENDENTE : 
                                                                 PIN_INT_DESCENDENTE;
         if (hd.flanco & flanco)
-            hd.handler();
+            hd.handler->handler(hd.handler);
     }
 }
 
