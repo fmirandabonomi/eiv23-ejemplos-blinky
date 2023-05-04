@@ -57,9 +57,12 @@ static bool ejecuta_primera_accion_retardada(uint32_t ref){
     DescriptorRetardo m = heapRetardo.mem[0];
 
     if (c > 0 && m.vencimiento == ref){
-        if (m.elem) m.elem->handler(m.elem);
+        if (m.elem){
+            m.elem->handler(m.elem);
+        }
         rval = true;
-        heapRetardo.mem[0] = heapRetardo.mem[--c];
+        m = heapRetardo.mem[--c];
+        heapRetardo.mem[0] = m;
         bool hecho = false;
         int i=0;
         while (!hecho && (BHeap_RIGHT_CHILD(i) < c)){
@@ -202,28 +205,13 @@ static PinDescriptor const pines[MAX_PINS]={
 
 typedef struct ExtiHandlerDescriptor{
     BP_HandlerObject * handler;
+    BP_HPin hPin;
     BP_Pin_FlancoInterrupcion flanco;
 }ExtiHandlerDescriptor;
 
-static ExtiHandlerDescriptor exti_handlers[MAX_PINS]={0};
+static ExtiHandlerDescriptor exti_handlers[16]={0};
 
-#define GET_EXTI_HANDLER(hpin) (exti_handlers[hpin % MAX_PINS])
-
-static uint64_t exti_use_counter = 0;
-
-static int exti_get_count(int const nrPin){
-    return (exti_use_counter >> (4*nrPin))&0xF;
-}
-static void exti_count_up(int const nrPin){
-    if (exti_get_count(nrPin) < 15){
-        exti_use_counter += 1 << (4*nrPin);
-    }
-}
-static void exti_count_down(int const nrPin){
-    if(exti_get_count(nrPin)){
-        exti_use_counter -= 1 << (4*nrPin);
-    }
-}
+#define GET_EXTI_HANDLER(nrPin) (exti_handlers[nrPin & 0xF])
 
 typedef struct ExtiIrqnDescriptor{
     /**
@@ -305,6 +293,14 @@ void BP_Pin_modoSalida(BP_HPin hpin, BP_Pin_Velocidad velocidad, bool drenadorAb
         __enable_irq();
     }
 }
+
+static void set_afio_exti_pin(PinDescriptor pin){
+    RCC->APB2ENR |= RCC_APB2ENR_AFIOEN;
+    int offset = (pin.nrPin*4)%16;
+    int indice = (pin.nrPin*4)/16;
+    int selector = (pin.hGpio & 0xF) - 2;
+    AFIO->EXTICR[indice] = (AFIO->EXTICR[indice] & ~(0xF << offset)) | (selector << offset);
+}
 bool BP_Pin_configuraInterrupcionExterna(BP_HPin hpin, BP_HandlerObject *handler, BP_Pin_FlancoInterrupcion flanco){
     PinDescriptor const pin = GET_PIN(hpin);
     ExtiIrqnDescriptor const irqDescriptor = exti_irq(pin.nrPin);
@@ -313,17 +309,18 @@ bool BP_Pin_configuraInterrupcionExterna(BP_HPin hpin, BP_HandlerObject *handler
         && irqDescriptor.extiMask
         && handler != (BP_HandlerObject*) 0
         && (flanco & (PIN_INT_ASCENDENTE | PIN_INT_DESCENDENTE))){
-        ExtiHandlerDescriptor *const handlerDescriptor = &GET_EXTI_HANDLER(hpin);
+        ExtiHandlerDescriptor *const handlerDescriptor = &GET_EXTI_HANDLER(pin.nrPin);
         __disable_irq();
         if (!handlerDescriptor->handler){
             handlerDescriptor->flanco = flanco;
+            handlerDescriptor->hPin = hpin;  
             handlerDescriptor->handler = handler;
-            exti_count_up(pin.nrPin);
             uint32_t const mascara = 1UL << pin.nrPin; 
             if (flanco & PIN_INT_ASCENDENTE)  EXTI->RTSR |= mascara;
             if (flanco & PIN_INT_DESCENDENTE) EXTI->FTSR |= mascara;
+            set_afio_exti_pin(pin);
             EXTI->PR = mascara;   // ignora IRQ pendiente anterior
-            EXTI->EMR |= mascara;
+            EXTI->IMR |= mascara;
             NVIC_EnableIRQ(irqDescriptor.irqn);
             resultado = true;
         }
@@ -341,17 +338,13 @@ bool BP_Pin_desactivaInterrupcionExterna(BP_HPin hpin){
         __disable_irq();
         if (handlerDescriptor->handler){
             handlerDescriptor->handler = (BP_HandlerObject*){0};
-            exti_count_down(pin.nrPin);
-            if (!exti_get_count(pin.nrPin)){
-                uint32_t const mascara = 1UL << pin.nrPin;
-                EXTI->IMR  &= ~mascara;
-                if (!(EXTI->EMR & mascara)){
-                    EXTI->FTSR &= ~mascara;
-                    EXTI->RTSR &= ~mascara;
-                }
-                if (!(EXTI->IMR & irqDescriptor.extiMask))
-                    NVIC_DisableIRQ(irqDescriptor.irqn);
-            }
+            uint32_t const mascara = 1UL << pin.nrPin;
+            EXTI->IMR  &= ~mascara;
+            // TODO : Coordinar con eventos si es necesario
+            EXTI->FTSR &= ~mascara;
+            EXTI->RTSR &= ~mascara;
+            if (!(EXTI->IMR & irqDescriptor.extiMask))
+                NVIC_DisableIRQ(irqDescriptor.irqn);
             resultado = true;
         }
         __enable_irq();
@@ -388,11 +381,11 @@ bool BP_Pin_estadoSalida(BP_HPin hpin){
 }
 
 
-static void despacha_exti_pin(BP_HPin hPin){
-    ExtiHandlerDescriptor const hd = GET_EXTI_HANDLER(hPin);
+static void despacha_exti_pin(int nrPin){
+    ExtiHandlerDescriptor const hd = GET_EXTI_HANDLER(nrPin);
     if (hd.handler){
-        BP_Pin_FlancoInterrupcion const flanco = (BP_Pin_lee(hPin)) ? PIN_INT_ASCENDENTE : 
-                                                                PIN_INT_DESCENDENTE;
+        BP_Pin_FlancoInterrupcion const flanco = (BP_Pin_lee(hd.hPin)) ? PIN_INT_ASCENDENTE : 
+                                                                         PIN_INT_DESCENDENTE;
         if (hd.flanco & flanco)
             hd.handler->handler(hd.handler);
     }
@@ -402,27 +395,23 @@ static void despacha_exti_pin(BP_HPin hPin){
 
 void EXTI0_IRQHandler(void){
     EXTI->PR = PR_MASK(0);
-    despacha_exti_pin(PA0);
-    despacha_exti_pin(PA1);
+    despacha_exti_pin(0);
 }
 void EXTI1_IRQHandler(void){
     EXTI->PR = PR_MASK(1);
-    despacha_exti_pin(PA1);
-    despacha_exti_pin(PB1);
+    despacha_exti_pin(1);
 }
 void EXTI2_IRQHandler(void){
     EXTI->PR = PR_MASK(2);
-    despacha_exti_pin(PA2);
+    despacha_exti_pin(2);
 }
 void EXTI3_IRQHandler(void){
     EXTI->PR = PR_MASK(3);
-    despacha_exti_pin(PA3);
-    despacha_exti_pin(PB3);
+    despacha_exti_pin(3);
 }
 void EXTI4_IRQHandler(void){
     EXTI->PR = PR_MASK(4);
-    despacha_exti_pin(PA4);
-    despacha_exti_pin(PB4);
+    despacha_exti_pin(4);
 }
 void EXTI9_5_IRQHandler(void){
     // Fuentes de interrupción según número de ceros a la izquierda luego de alinear
@@ -430,24 +419,19 @@ void EXTI9_5_IRQHandler(void){
     switch(__CLZ(EXTI->PR << (31-9))){
     case EXTI_9:
         EXTI->PR = PR_MASK(9);
-        despacha_exti_pin(PA9);
-        despacha_exti_pin(PB9);
+        despacha_exti_pin(9);
     break;case EXTI_8:
         EXTI->PR = PR_MASK(8);
-        despacha_exti_pin(PA8);
-        despacha_exti_pin(PB8);
+        despacha_exti_pin(8);
     break;case EXTI_7:
         EXTI->PR = PR_MASK(7);
-        despacha_exti_pin(PA7);
-        despacha_exti_pin(PB7);
+        despacha_exti_pin(7);
     break;case EXTI_6:
         EXTI->PR = PR_MASK(6);
-        despacha_exti_pin(PA6);
-        despacha_exti_pin(PB6);
+        despacha_exti_pin(6);
     break;case EXTI_5:
         EXTI->PR = PR_MASK(5);
-        despacha_exti_pin(PA5);
-        despacha_exti_pin(PB5);
+        despacha_exti_pin(5);
     break;default:
     break;
     }
@@ -457,29 +441,22 @@ void EXTI15_10_IRQHandler(void){
     switch(__CLZ(EXTI->PR << (31-15))){
     case EXTI_15:
         EXTI->PR = PR_MASK(15);
-        despacha_exti_pin(PA15);
-        despacha_exti_pin(PB15);
-        despacha_exti_pin(PC15);
+        despacha_exti_pin(15);
     break;case EXTI_14:
         EXTI->PR = PR_MASK(14);
-        despacha_exti_pin(PB14);
-        despacha_exti_pin(PC14);
+        despacha_exti_pin(14);
     break;case EXTI_13:
         EXTI->PR = PR_MASK(13);
-        despacha_exti_pin(PB13);
-        despacha_exti_pin(PC13);
+        despacha_exti_pin(13);
     break;case EXTI_12:
         EXTI->PR = PR_MASK(12);
-        despacha_exti_pin(PA12);
-        despacha_exti_pin(PB12);
+        despacha_exti_pin(12);
     break;case EXTI_11:
         EXTI->PR = PR_MASK(11);
-        despacha_exti_pin(PA11);
-        despacha_exti_pin(PB11);
+        despacha_exti_pin(11);
     break;case EXTI_10:
         EXTI->PR = PR_MASK(10);
-        despacha_exti_pin(PA10);
-        despacha_exti_pin(PB10);
+        despacha_exti_pin(10);
     break;default:
     break;
     }
